@@ -21,8 +21,15 @@ $stmt = $pdo->prepare("SELECT * FROM classes WHERE id = ?");
 $stmt->execute([$classe_id]);
 $classe = $stmt->fetch();
 
-$stmt = $pdo->prepare("SELECT * FROM matieres WHERE id = ?");
-$stmt->execute([$matiere_id]);
+$stmt = $pdo->prepare("
+    SELECT 
+        m.*,
+        cm.coefficient AS coef_classe
+    FROM matieres m
+    JOIN classe_matiere cm ON cm.matiere_id = m.id
+    WHERE m.id = ? AND cm.classe_id = ?
+");
+$stmt->execute([$matiere_id, $classe_id]);
 $matiere = $stmt->fetch();
 
 if (!$classe || !$matiere) {
@@ -580,7 +587,7 @@ $stmt->execute([
                     </div>
                     <div class="info-item">
                         <i class="fas fa-balance-scale"></i>
-                        <span>Coefficient: <?php echo $matiere['coefficient']; ?></span>
+                        <span>Coefficient: <?php echo $matiere['coef_classe']; ?></span>
                     </div>
                 </div>
             </div>
@@ -837,14 +844,13 @@ $stmt->execute([
             const moyGeneraleArrondie = moyGenerale.toFixed(2);
 
             // Calcul de la moyenne avec coefficient
-            const coefficient = <?= $matiere['coefficient'] ?>;
+            const coefficient = <?= $matiere['coef_classe'] ?>;
             const moyCoef = (moyGenerale * coefficient).toFixed(2);
 
             // Stocker la moyenne générale pour le classement
             moyennesGenerales.push({
                 eleveId: eleveId,
-                moyenne: parseFloat(moyGeneraleArrondie),
-                moyenneCoef: parseFloat(moyCoef)
+                moyenne: parseFloat(moyCoef) // 🔥 classement basé sur coef
             });
 
             // Mettre à jour les cellules

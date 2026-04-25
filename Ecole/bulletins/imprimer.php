@@ -13,277 +13,32 @@ $annee_id = isset($_GET['annee']) ? (int)$_GET['annee'] : 0;
 
 if (!$eleve_id || !$trimestre_id || !$annee_id) die("Paramètres manquants !");
 
-// Fonction pour formater le trimestre avec exposant
+// =====================
+// FONCTIONS UTILITAIRES
+// =====================
+
 function formatTrimestre($nom_trimestre)
 {
-    // Remplacer "er" et "eme" par des versions en exposant
     $formatted = preg_replace('/(\d+)er/', '$1<sup>er</sup>', $nom_trimestre);
     $formatted = preg_replace('/(\d+)eme/', '$1<sup>ème</sup>', $formatted);
     $formatted = preg_replace('/(\d+)ème/', '$1<sup>ème</sup>', $formatted);
     return $formatted;
 }
 
-// Fonction pour afficher le sexe en texte complet
 function formatSexe($code_sexe)
 {
-    switch (strtoupper($code_sexe)) {
-        case 'M':
-            return 'Masculin';
-        case 'F':
-            return 'Féminin';
-        default:
-            return $code_sexe;
-    }
+    return match (strtoupper($code_sexe)) {
+        'M' => 'Masculin',
+        'F' => 'Féminin',
+        default => $code_sexe
+    };
 }
 
-// Fonction pour formater le rang avec suffixe
 function formatRang($rang)
 {
     if ($rang == 1) return $rang . "<sup>er</sup>";
-    if ($rang == 2) return $rang . "<sup>e</sup>";
     return $rang . "<sup>e</sup>";
 }
-
-// Fonction pour calculer la moyenne d'une matière
-function calculerMoyenneMatiere($notes_raw)
-{
-    $interros = $mini_devs = $dev_hebdos = $compos = [];
-
-    foreach ($notes_raw as $n) {
-        if ($n['type_note'] === 'interro') $interros[] = $n['note'];
-        if ($n['type_note'] === 'mini_dev') $mini_devs[] = $n['note'];
-        if ($n['type_note'] === 'dev_hebdo') $dev_hebdos[] = $n['note'];
-        if ($n['type_note'] === 'compo') $compos[] = $n['note'];
-    }
-
-    // Moyennes par type
-    $moy_interro = count($interros) ? array_sum($interros) / count($interros) : null;
-    $moy_mini_dev = count($mini_devs) ? array_sum($mini_devs) / count($mini_devs) : null;
-    $moy_dev_hebdo = count($dev_hebdos) ? array_sum($dev_hebdos) / count($dev_hebdos) : null;
-    $moy_compo = count($compos) ? array_sum($compos) / count($compos) : null;
-
-    // Moyenne devoir (mini_dev + dev_hebdo)
-    $dev_notes = array_filter([$moy_mini_dev, $moy_dev_hebdo], fn($v) => $v !== null);
-    $moy_dev = count($dev_notes) ? array_sum($dev_notes) / count($dev_notes) : null;
-
-    // Moyenne interro + devoir
-    $int_notes = array_filter([$moy_interro, $moy_dev], fn($v) => $v !== null);
-    $moy_int = count($int_notes) ? array_sum($int_notes) / count($int_notes) : null;
-
-    // Moyenne finale de la matière
-    $final_notes = array_filter([$moy_int, $moy_compo], fn($v) => $v !== null);
-    $moy_matiere = count($final_notes) ? array_sum($final_notes) / count($final_notes) : null;
-
-    return $moy_matiere;
-}
-
-// -----------------------
-// Infos élève
-// -----------------------
-$stmt = $pdo->prepare("
-    SELECT e.*, c.nom_classe 
-    FROM eleves e
-    JOIN classes c ON c.id = e.classe_id
-    WHERE e.id = ?
-");
-$stmt->execute([$eleve_id]);
-$eleve = $stmt->fetch();
-
-// Trimestre et année
-$stmt = $pdo->prepare("SELECT * FROM trimestres WHERE id=?");
-$stmt->execute([$trimestre_id]);
-$trimestre = $stmt->fetch();
-
-$stmt = $pdo->prepare("SELECT * FROM annees_scolaires WHERE id=?");
-$stmt->execute([$annee_id]);
-$annee = $stmt->fetch();
-
-// -----------------------
-// Matières (toutes)
-// -----------------------
-$matieres_toutes = $pdo->prepare("
-    SELECT m.id, m.nom_matiere, m.coefficient
-    FROM matieres m
-    JOIN classe_matiere cm ON cm.matiere_id = m.id
-    WHERE cm.classe_id = ?
-    ORDER BY m.nom_matiere
-");
-$matieres_toutes->execute([$eleve['classe_id']]);
-$matieres_toutes = $matieres_toutes->fetchAll();
-
-// -----------------------
-// Identifier et séparer la matière "Conduite"
-// -----------------------
-$matieres = [];
-$conduite_matiere = null;
-
-foreach ($matieres_toutes as $matiere) {
-    if (
-        strtolower($matiere['nom_matiere']) === 'conduite' ||
-        strtolower($matiere['nom_matiere']) === 'comportement' ||
-        stripos($matiere['nom_matiere'], 'conduite') !== false
-    ) {
-        $conduite_matiere = $matiere;
-    } else {
-        $matieres[] = $matiere;
-    }
-}
-
-// -----------------------
-// Notes de l'élève (sans Conduite)
-// -----------------------
-$bulletin = [];
-foreach ($matieres as $m) {
-    // Récupérer toutes les notes pour cette matière
-    $stmt = $pdo->prepare("
-        SELECT note, type_note 
-        FROM notes 
-        WHERE eleve_id=? AND matiere_id=? AND trimestre_id=? AND annee_id=?
-    ");
-    $stmt->execute([$eleve_id, $m['id'], $trimestre_id, $annee_id]);
-    $notes_raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $moy_matiere = calculerMoyenneMatiere($notes_raw);
-
-    $bulletin[] = [
-        'matiere_id' => $m['id'],
-        'nom_matiere' => $m['nom_matiere'],
-        'coefficient' => (int)$m['coefficient'],
-        'moy_matiere' => $moy_matiere
-    ];
-}
-
-// -----------------------
-// Notes pour Conduite si elle existe
-// -----------------------
-$conduite_data = null;
-if ($conduite_matiere) {
-    $stmt = $pdo->prepare("
-        SELECT note, type_note 
-        FROM notes 
-        WHERE eleve_id=? AND matiere_id=? AND trimestre_id=? AND annee_id=?
-    ");
-    $stmt->execute([$eleve_id, $conduite_matiere['id'], $trimestre_id, $annee_id]);
-    $notes_conduite = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $notes_values = array_column($notes_conduite, 'note');
-    $moy_conduite = count($notes_values) ? array_sum($notes_values) / count($notes_values) : null;
-
-    $conduite_data = [
-        'matiere_id' => $conduite_matiere['id'],
-        'nom_matiere' => $conduite_matiere['nom_matiere'],
-        'coefficient' => (int)$conduite_matiere['coefficient'],
-        'moy_matiere' => $moy_conduite
-    ];
-}
-
-// -----------------------
-// Effectif de la classe
-// -----------------------
-$eleves_classe = $pdo->prepare("SELECT id FROM eleves WHERE classe_id=?");
-$eleves_classe->execute([$eleve['classe_id']]);
-$eleves_ids = $eleves_classe->fetchAll(PDO::FETCH_COLUMN);
-$effectif_classe = count($eleves_ids);
-
-// -----------------------
-// Moyennes des élèves de la classe (INCLUANT CONDUITE)
-// -----------------------
-$eleves_moyennes = [];
-$matieres_avec_conduite = array_merge($matieres, $conduite_matiere ? [$conduite_matiere] : []);
-
-foreach ($eleves_ids as $eid) {
-    $total_moy_pondere = 0;
-    $total_coeff = 0;
-
-    foreach ($matieres_avec_conduite as $m) {
-        $stmt = $pdo->prepare("
-            SELECT note, type_note
-            FROM notes
-            WHERE eleve_id=? AND matiere_id=? AND trimestre_id=? AND annee_id=?
-        ");
-        $stmt->execute([$eid, $m['id'], $trimestre_id, $annee_id]);
-        $notes_raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // Pour la matière "Conduite", calcul simple
-        if ($conduite_matiere && $m['id'] == $conduite_matiere['id']) {
-            $notes_values = array_column($notes_raw, 'note');
-            $moy_matiere = count($notes_values) ? array_sum($notes_values) / count($notes_values) : null;
-        } else {
-            $moy_matiere = calculerMoyenneMatiere($notes_raw);
-        }
-
-        if ($moy_matiere !== null) {
-            $total_moy_pondere += $moy_matiere * $m['coefficient'];
-            $total_coeff += $m['coefficient'];
-        }
-    }
-
-    $eleves_moyennes[$eid] = ($total_coeff > 0) ? $total_moy_pondere / $total_coeff : null;
-}
-
-// -----------------------
-// Classement et statistiques (AVEC CONDUITE)
-// -----------------------
-arsort($eleves_moyennes);
-$moyenne_generale = $eleves_moyennes[$eleve_id] ?? null;
-$rang_eleve = array_search($eleve_id, array_keys($eleves_moyennes)) + 1;
-
-$valid_moyennes = array_filter($eleves_moyennes, fn($v) => $v !== null);
-$classe_max = !empty($valid_moyennes) ? max($valid_moyennes) : null;
-$classe_min = !empty($valid_moyennes) ? min($valid_moyennes) : null;
-$classe_avg = !empty($valid_moyennes) ? array_sum($valid_moyennes) / count($valid_moyennes) : null;
-
-// -----------------------
-// Calcul de la moyenne finale pour l'affichage (cohérent avec le classement)
-// -----------------------
-$total_moy_coeff = 0;
-$total_coeff = 0;
-$total_moy_coeff_conduite = 0;
-$total_coeff_conduite = 0;
-
-foreach ($bulletin as $b) {
-    if ($b['moy_matiere'] !== null) {
-        $total_moy_coeff += $b['moy_matiere'] * $b['coefficient'];
-        $total_coeff += $b['coefficient'];
-    }
-}
-
-if ($conduite_data && $conduite_data['moy_matiere'] !== null) {
-    $total_moy_coeff_conduite = $conduite_data['moy_matiere'] * $conduite_data['coefficient'];
-    $total_coeff_conduite = $conduite_data['coefficient'];
-}
-
-$total_moy_coeff_finale = $total_moy_coeff + $total_moy_coeff_conduite;
-$total_coeff_finale = $total_coeff + $total_coeff_conduite;
-$moyenne_generale_finale = ($total_coeff_finale > 0) ? $total_moy_coeff_finale / $total_coeff_finale : null;
-
-// Vérification de cohérence (devrait être égale à $moyenne_generale)
-if (
-    $moyenne_generale !== null && $moyenne_generale_finale !== null &&
-    abs($moyenne_generale - $moyenne_generale_finale) > 0.01
-) {
-    // Log d'erreur silencieux ou notification
-    error_log("Incohérence de calcul de moyenne: classement=$moyenne_generale, affichage=$moyenne_generale_finale");
-}
-
-// -----------------------
-// Appréciation générale
-// -----------------------
-$appreciation = '';
-if ($moyenne_generale_finale !== null) {
-    if ($moyenne_generale_finale >= 18) $appreciation = 'EXCELLENT';
-    elseif ($moyenne_generale_finale >= 16) $appreciation = 'TRÈS BIEN';
-    elseif ($moyenne_generale_finale >= 14) $appreciation = ' BIEN';
-    elseif ($moyenne_generale_finale >= 12) $appreciation = 'ASSEZ-BIEN';
-    elseif ($moyenne_generale_finale >= 10) $appreciation = ' PASSABLE';
-    else $appreciation = 'INSUFFISANT';
-}
-
-// -----------------------
-// Établissement
-// -----------------------
-$etablissement = "LYCEE POLYTECHNIQUE BLAISE PASCAL";
-$ville = "Lot: 1298 Gbêdagba/ Sainte Rita/Cotonou";
 
 function appreciation_matiere($moy)
 {
@@ -295,6 +50,230 @@ function appreciation_matiere($moy)
     if ($moy >= 10) return 'Passable';
     return 'Insuffisant';
 }
+
+// =====================
+// CALCUL MOYENNE MATIÈRE
+// =====================
+
+function calculerMoyenneMatiere($notes_raw)
+{
+    $groupes = [
+        'interro' => [],
+        'mini_dev' => [],
+        'dev_hebdo' => [],
+        'compo' => []
+    ];
+
+    foreach ($notes_raw as $n) {
+        $groupes[$n['type_note']][] = $n['note'];
+    }
+
+    $moy = function ($arr) {
+        return count($arr) ? array_sum($arr) / count($arr) : null;
+    };
+
+    $moy_interro = $moy($groupes['interro']);
+    $moy_mini_dev = $moy($groupes['mini_dev']);
+    $moy_dev_hebdo = $moy($groupes['dev_hebdo']);
+    $moy_compo = $moy($groupes['compo']);
+
+    $moy_dev = $moy(array_filter([$moy_mini_dev, $moy_dev_hebdo]));
+    $moy_int = $moy(array_filter([$moy_interro, $moy_dev]));
+
+    return $moy(array_filter([$moy_int, $moy_compo]));
+}
+
+// =====================
+// INFOS ÉLÈVE
+// =====================
+
+$stmt = $pdo->prepare("
+    SELECT e.*, c.nom_classe 
+    FROM eleves e
+    JOIN classes c ON c.id = e.classe_id
+    WHERE e.id = ?
+");
+$stmt->execute([$eleve_id]);
+$eleve = $stmt->fetch();
+
+$stmt = $pdo->prepare("SELECT * FROM trimestres WHERE id=?");
+$stmt->execute([$trimestre_id]);
+$trimestre = $stmt->fetch();
+
+$stmt = $pdo->prepare("SELECT * FROM annees_scolaires WHERE id=?");
+$stmt->execute([$annee_id]);
+$annee = $stmt->fetch();
+
+// =====================
+// MATIÈRES
+// =====================
+
+$stmt = $pdo->prepare("
+    SELECT m.id, m.nom_matiere, cm.coefficient
+    FROM matieres m
+    JOIN classe_matiere cm ON cm.matiere_id = m.id
+    WHERE cm.classe_id = ?
+    ORDER BY m.nom_matiere
+");
+$stmt->execute([$eleve['classe_id']]);
+$matieres_toutes = $stmt->fetchAll();
+
+$matieres = [];
+$conduite = null;
+
+foreach ($matieres_toutes as $m) {
+    if (stripos($m['nom_matiere'], 'conduite') !== false || stripos($m['nom_matiere'], 'comportement') !== false) {
+        $conduite = $m;
+    } else {
+        $matieres[] = $m;
+    }
+}
+
+// =====================
+// BULLETIN ÉLÈVE
+// =====================
+
+$bulletin = [];
+
+foreach ($matieres as $m) {
+
+    $stmt = $pdo->prepare("
+        SELECT note, type_note 
+        FROM notes 
+        WHERE eleve_id=? AND matiere_id=? AND trimestre_id=? AND annee_id=?
+    ");
+    $stmt->execute([$eleve_id, $m['id'], $trimestre_id, $annee_id]);
+    $notes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $moy = calculerMoyenneMatiere($notes);
+
+    $bulletin[] = [
+        'matiere_id' => $m['id'],
+        'nom_matiere' => $m['nom_matiere'],
+        'coefficient' => (int)$m['coefficient'] ?? 0,
+        'moy_matiere' => $moy
+    ];
+}
+
+// =====================
+// CONDUITE
+// =====================
+
+$conduite_data = null;
+
+if ($conduite) {
+    $stmt = $pdo->prepare("
+        SELECT note FROM notes 
+        WHERE eleve_id=? AND matiere_id=? AND trimestre_id=? AND annee_id=?
+    ");
+    $stmt->execute([$eleve_id, $conduite['id'], $trimestre_id, $annee_id]);
+    $notes = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    $moy = count($notes) ? array_sum($notes) / count($notes) : null;
+
+    $conduite_data = [
+        'nom_matiere' => $conduite['nom_matiere'],
+        'coefficient' => (int)$conduite['coefficient'],
+        'moy_matiere' => $moy
+    ];
+}
+
+// =====================
+// MOYENNE GÉNÉRALE CLASSE
+// =====================
+
+$eleves = $pdo->prepare("SELECT id FROM eleves WHERE classe_id=?");
+$eleves->execute([$eleve['classe_id']]);
+$eleves_ids = $eleves->fetchAll(PDO::FETCH_COLUMN);
+
+$eleves_moyennes = [];
+
+foreach ($eleves_ids as $eid) {
+
+    $total = 0;
+    $coeff_total = 0;
+
+    foreach (array_merge($matieres, $conduite ? [$conduite] : []) as $m) {
+
+        $stmt = $pdo->prepare("
+            SELECT note, type_note 
+            FROM notes 
+            WHERE eleve_id=? AND matiere_id=? AND trimestre_id=? AND annee_id=?
+        ");
+        $stmt->execute([$eid, $m['id'], $trimestre_id, $annee_id]);
+        $notes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $moy = ($conduite && $m['id'] == $conduite['id'])
+            ? (count($notes) ? array_sum(array_column($notes, 'note')) / count($notes) : null)
+            : calculerMoyenneMatiere($notes);
+
+        if ($moy !== null) {
+            $total += $moy * $m['coefficient'];
+            $coeff_total += $m['coefficient'];
+        }
+    }
+
+    $eleves_moyennes[$eid] = $coeff_total ? $total / $coeff_total : null;
+}
+
+// =====================
+// CLASSEMENT
+// =====================
+
+arsort($eleves_moyennes);
+
+$keys = array_keys($eleves_moyennes);
+$pos = array_search($eleve_id, $keys);
+$rang_eleve = $pos !== false ? $pos + 1 : null;
+
+$valid = array_filter($eleves_moyennes);
+$classe_max = max($valid);
+$classe_min = min($valid);
+$classe_avg = array_sum($valid) / count($valid);
+
+// =====================
+// MOYENNE ÉLÈVE
+// =====================
+
+$moyenne_generale = $eleves_moyennes[$eleve_id] ?? null;
+
+$appreciation = match (true) {
+    $moyenne_generale >= 18 => 'EXCELLENT',
+    $moyenne_generale >= 16 => 'TRÈS BIEN',
+    $moyenne_generale >= 14 => 'BIEN',
+    $moyenne_generale >= 12 => 'ASSEZ-BIEN',
+    $moyenne_generale >= 10 => 'PASSABLE',
+    default => 'INSUFFISANT'
+};
+
+// =====================
+// CONFIG ÉTABLISSEMENT
+// =====================
+
+$etablissement = "LYCEE POLYTECHNIQUE BLAISE PASCAL";
+$ville = "Lot: 1298 Gbêdagba/ Sainte Rita/Cotonou";
+
+
+
+$total_coeff_finale = 0;
+$total_moy_coeff_finale = 0;
+
+// recalcul propre depuis bulletin
+foreach ($bulletin as $b) {
+    if ($b['moy_matiere'] !== null) {
+        $total_moy_coeff_finale += $b['moy_matiere'] * $b['coefficient'];
+        $total_coeff_finale += $b['coefficient'];
+    }
+}
+
+if ($conduite_data && $conduite_data['moy_matiere'] !== null) {
+    $total_moy_coeff_finale += $conduite_data['moy_matiere'] * $conduite_data['coefficient'];
+    $total_coeff_finale += $conduite_data['coefficient'];
+}
+
+$moyenne_generale_finale = $total_coeff_finale > 0
+    ? $total_moy_coeff_finale / $total_coeff_finale
+    : null;
 ?>
 
 <!DOCTYPE html>

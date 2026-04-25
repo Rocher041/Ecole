@@ -26,7 +26,10 @@ if (!$classe) {
 }
 
 $stmt = $pdo->prepare("
-    SELECT m.*
+    SELECT 
+        m.id,
+        m.nom_matiere,
+        cm.coefficient
     FROM matieres m
     INNER JOIN classe_matiere cm ON cm.matiere_id = m.id
     WHERE cm.classe_id = ?
@@ -539,26 +542,7 @@ $nb_eleves = $stmt->fetchColumn();
                         <h3 class="matiere-name"><?php echo htmlspecialchars($matiere['nom_matiere']); ?></h3>
                         <span class="matiere-coeff">Coefficient: <?php echo $matiere['coefficient']; ?></span>
                     </div>
-                    <div class="matiere-body">
-                        <div class="stats">
-                            <div class="stat-item">
-                                <div class="stat-value"><?php echo $stats['nb_notes']; ?></div>
-                                <div class="stat-label">Notes</div>
-                            </div>
-                            <div class="stat-item">
-                                <div class="stat-value"><?php echo $moyenne; ?></div>
-                                <div class="stat-label">Moyenne</div>
-                            </div>
-                            <div class="stat-item">
-                                <div class="stat-value"><?php echo $pourcentage; ?>%</div>
-                                <div class="stat-label">Couverts</div>
-                            </div>
-                        </div>
-                        <a href="notes_matiere.php?classe_id=<?= $classe_id ?>&matiere_id=<?= $matiere['id'] ?>"
-                            class="view-btn">
-                            <i class="fas fa-chart-bar"></i> Voir les notes
-                        </a>
-                    </div>
+
                 </div>
                 <?php endforeach; ?>
             </div>
