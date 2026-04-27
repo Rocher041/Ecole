@@ -287,7 +287,7 @@ $moyenne_generale_finale = $total_coeff_finale > 0
     @page {
         size: A4 portrait;
         margin: 1cm;
-        background-color: #D6E6F5;
+
     }
 
     * {
@@ -341,7 +341,7 @@ $moyenne_generale_finale = $total_coeff_finale > 0
         font-weight: bold;
         padding: 0.2cm;
         border: 1pt solid #000;
-        background-color: #D6E6F5;
+        background-color: white;
     }
 
     /* Styles pour le superscript */
@@ -370,8 +370,11 @@ $moyenne_generale_finale = $total_coeff_finale > 0
 
     .student-info .label {
         font-weight: bold;
-        width: 15%;
+        width: 10%;
         text-decoration: underline;
+
+        white-space: nowrap;
+        /* évite les retours à la ligne */
     }
 
     /* TABLEAU DES NOTES */
@@ -384,7 +387,7 @@ $moyenne_generale_finale = $total_coeff_finale > 0
 
     .grades-table th {
         border: 1pt solid #000;
-        background-color: #D6E6F5;
+        background-color: white;
         padding: 0.11cm;
         text-align: center;
         font-weight: bold;
@@ -406,12 +409,12 @@ $moyenne_generale_finale = $total_coeff_finale > 0
 
     .grades-table .average {
         font-weight: bold;
-        background-color: #D6E6F5;
+        background-color: white;
     }
 
     /* Style spécial pour la ligne Conduite - LES BORDURES COMME LES AUTRES */
     .conduite-row {
-        background-color: #D6E6F5;
+        background-color: white;
         font-weight: bold;
     }
 
@@ -536,6 +539,7 @@ $moyenne_generale_finale = $total_coeff_finale > 0
     .signature-name {
         font-size: 8pt;
         color: #666;
+
     }
 
     /* PIED DE PAGE */
@@ -672,7 +676,9 @@ $moyenne_generale_finale = $total_coeff_finale > 0
                 </tr>
                 <tr>
                     <td class="label">Classe:</td>
-                    <td><?= htmlspecialchars($eleve['nom_classe']) ?></td>
+                    <td>
+                        <?= preg_replace('/(\d+)(nde|eme|ème)/', '$1<sup>$2</sup>', htmlspecialchars($eleve['nom_classe'])) ?>
+                    </td>
                     <td class="label">Trimestre:</td>
                     <td><?= formatTrimestre(htmlspecialchars($trimestre['nom'])) ?></td>
                 </tr>
@@ -890,6 +896,9 @@ $moyenne_generale_finale = $total_coeff_finale > 0
             <div class="signature-box directeur-box">
                 <div class="signature-title">Le Directeur</div>
                 <pre>
+
+
+
 
                 </pre>
                 <div class="signature-name">ADOUGAN Antoine Marie</div>
